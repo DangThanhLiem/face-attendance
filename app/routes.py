@@ -227,7 +227,6 @@ def export_report():
     if not current_user.is_admin:
         return redirect(url_for('employee.dashboard'))
 
-    # Tạo thư mục reports nếu chưa tồn tại
     reports_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'reports')
     if not os.path.exists(reports_dir):
         os.makedirs(reports_dir)
@@ -236,40 +235,161 @@ def export_report():
     employee_id = request.args.get('employee_id')
     report_type = request.args.get('type', 'daily')
 
-    report_generator = ReportGenerator()
-
     try:
-        if report_type == 'daily':
-            if date:
-                date = datetime.strptime(date, '%Y-%m-%d').date()
-                df = report_generator.generate_daily_report(date)
-                filename = f'daily_attendance_report_{date}.xlsx'
-            else:
-                today = datetime.now().date()
-                df = report_generator.generate_daily_report(today)
-                filename = f'daily_attendance_report_{today}.xlsx'
-        
-        elif report_type == 'monthly':
-            today = datetime.now()
-            df = report_generator.generate_monthly_report(today.year, today.month)
-            filename = f'monthly_attendance_report_{today.year}_{today.month}.xlsx'
-        
-        elif report_type == 'employee' and employee_id:
-            start_date = datetime.strptime(request.args.get('start_date', ''), '%Y-%m-%d').date()
-            end_date = datetime.strptime(request.args.get('end_date', ''), '%Y-%m-%d').date()
-            df, summary = report_generator.generate_employee_report(employee_id, start_date, end_date)
-            filename = f'employee_attendance_report_{employee_id}.xlsx'
-        else:
-            flash('Invalid report type or missing parameters', 'danger')
-            return redirect(url_for('admin.reports'))
+        query = Attendance.query
 
-        # Tạo đường dẫn đầy đủ cho file
+        # Xử lý các điều kiện lọc
+        if date and employee_id:
+            date_obj = datetime.strptime(date, '%Y-%m-%d').date()
+            query = query.filter(Attendance.date == date_obj, Attendance.user_id == employee_id)
+            employee = User.query.get(employee_id)
+            filename = f'attendance_report_{employee.name}_{date_obj}.xlsx'
+        elif date:
+            date_obj = datetime.strptime(date, '%Y-%m-%d').date()
+            query = query.filter(Attendance.date == date_obj)
+            filename = f'attendance_report_{date_obj}.xlsx'
+        elif employee_id:
+            query = query.filter(Attendance.user_id == employee_id)
+            employee = User.query.get(employee_id)
+            filename = f'attendance_report_{employee.name}_all_dates.xlsx'
+        else:
+            filename = 'attendance_report_all.xlsx'
+
+        attendances = query.order_by(Attendance.date.desc(), Attendance.time_in.asc()).all()
+
+        data = []
+        total_hours = 0
+        for att in attendances:
+            user = User.query.get(att.user_id)
+            working_hours = 0
+            if att.time_in and att.time_out:
+                time_diff = att.time_out - att.time_in
+                working_hours = round(time_diff.total_seconds()/3600, 2)
+                total_hours += working_hours
+            
+            data.append({
+                'Date': att.date.strftime('%Y-%m-%d'),
+                'Employee Name': user.name,
+                'Position': user.position,
+                'Check In': att.time_in.strftime('%H:%M:%S') if att.time_in else 'N/A',
+                'Check Out': att.time_out.strftime('%H:%M:%S') if att.time_out else 'N/A',
+                'Working Hours': working_hours
+            })
+
+        df = pd.DataFrame(data)
         filepath = os.path.join(reports_dir, filename)
-        
-        # Xuất file Excel
-        report_generator.export_to_excel(df, filepath)
-        
-        # Gửi file về client
+
+        with pd.ExcelWriter(filepath, engine='xlsxwriter') as writer:
+            if len(data) > 0:
+                # Tạo worksheet và viết dữ liệu
+                df.to_excel(writer, sheet_name='Attendance Data', index=False, startrow=1, startcol=0)
+                worksheet = writer.sheets['Attendance Data']
+                workbook = writer.book
+
+                # Định dạng cho tiêu đề
+                title_format = workbook.add_format({
+                    'bold': True,
+                    'font_size': 16,
+                    'align': 'center',
+                    'valign': 'vcenter',
+                    'font_color': '#0066cc'
+                })
+
+                # Định dạng cho header
+                header_format = workbook.add_format({
+                    'bold': True,
+                    'font_size': 11,
+                    'bg_color': '#4F81BD',
+                    'font_color': 'white',
+                    'align': 'center',
+                    'valign': 'vcenter',
+                    'border': 1,
+                    'border_color': '#2E75B6'
+                })
+
+                # Định dạng cho dữ liệu
+                data_format = workbook.add_format({
+                    'font_size': 10,
+                    'align': 'center',
+                    'valign': 'vcenter',
+                    'border': 1,
+                    'border_color': '#BDD7EE'
+                })
+
+                # Định dạng cho dòng tổng
+                total_format = workbook.add_format({
+                    'bold': True,
+                    'font_size': 11,
+                    'bg_color': '#FFE699',
+                    'align': 'center',
+                    'valign': 'vcenter',
+                    'border': 2,
+                    'border_color': '#ED7D31',
+                    'num_format': '#,##0.00'
+                })
+
+                # Định dạng cho số giờ
+                hours_format = workbook.add_format({
+                    'font_size': 10,
+                    'align': 'center',
+                    'valign': 'vcenter',
+                    'border': 1,
+                    'border_color': '#BDD7EE',
+                    'num_format': '#,##0.00'
+                })
+
+                # Viết tiêu đề báo cáo
+                title = 'ATTENDANCE REPORT'
+                if date:
+                    title += f' - {date}'
+                if employee_id:
+                    employee = User.query.get(employee_id)
+                    title += f' - {employee.name}'
+                
+                worksheet.merge_range('A1:F1', title, title_format)
+
+                # Áp dụng định dạng cho header
+                for col_num, value in enumerate(df.columns.values):
+                    worksheet.write(1, col_num, value, header_format)
+
+                # Áp dụng định dạng cho dữ liệu
+                for row_num in range(len(df)):
+                    for col_num in range(len(df.columns)):
+                        value = df.iloc[row_num, col_num]
+                        if col_num == 5:  # Working Hours column
+                            worksheet.write(row_num + 2, col_num, value, hours_format)
+                        else:
+                            worksheet.write(row_num + 2, col_num, value, data_format)
+
+                # Thêm dòng tổng kết
+                total_row = len(df) + 2
+                worksheet.merge_range(f'A{total_row+1}:E{total_row+1}', 'Total', total_format)
+                worksheet.write(total_row, 5, total_hours, total_format)
+
+                # Tự động điều chỉnh độ rộng cột
+                worksheet.set_column('A:A', 12)  # Date
+                worksheet.set_column('B:B', 20)  # Employee Name
+                worksheet.set_column('C:C', 15)  # Position
+                worksheet.set_column('D:E', 12)  # Check In/Out
+                worksheet.set_column('F:F', 15)  # Working Hours
+
+                # Thêm đường viền cho toàn bộ bảng
+                worksheet.conditional_format(1, 0, total_row, 5, {
+                    'type': 'no_blanks',
+                    'format': data_format
+                })
+
+            else:
+                worksheet = writer.book.add_worksheet('No Data')
+                no_data_format = workbook.add_format({
+                    'bold': True,
+                    'font_size': 12,
+                    'align': 'center',
+                    'valign': 'vcenter',
+                    'font_color': 'red'
+                })
+                worksheet.merge_range('A1:F1', 'No attendance records found for the selected criteria', no_data_format)
+
         return send_file(
             filepath,
             as_attachment=True,
@@ -277,8 +397,12 @@ def export_report():
         )
 
     except Exception as e:
+        print(f"Error in export_report: {str(e)}")
         flash(f'Error generating report: {str(e)}', 'danger')
         return redirect(url_for('admin.reports'))
+
+
+
 
 
 
@@ -377,69 +501,193 @@ def export_salary_report():
     month = request.args.get('month', datetime.now().month, type=int)
     year = request.args.get('year', datetime.now().year, type=int)
     
-    # Lấy tất cả bản ghi lương của tháng/năm được chọn
     salary_records = Salary.query.filter_by(month=month, year=year).all()
     
     salary_data = []
+    total_salary = 0
+    total_hours = 0
+    
     for record in salary_records:
         employee = User.query.get(record.user_id)
         if employee:
+            total_salary += record.total_salary
+            total_hours += record.total_hours
             salary_data.append({
                 'Employee Name': employee.name,
                 'Position': employee.position or 'N/A',
                 'Hourly Rate': employee.hourly_rate or 0,
                 'Total Hours': round(record.total_hours, 2),
-                'Total Salary': round(record.total_salary, 2),
-                'Month': f"{month}/{year}",
-                'Generated Date': record.created_at.strftime('%Y-%m-%d %H:%M')
+                'Total Salary': round(record.total_salary, 2)
             })
     
-    # Tạo DataFrame
     df = pd.DataFrame(salary_data)
-    
-    # Tạo tên file và đường dẫn
     filename = f'salary_report_{month}_{year}.xlsx'
     reports_dir = 'D:/face-recognition/reports'
     
-    # Tạo thư mục nếu chưa tồn tại
     if not os.path.exists(reports_dir):
         os.makedirs(reports_dir)
     
     filepath = os.path.join(reports_dir, filename)
     
-    # Tạo Excel file với định dạng
     with pd.ExcelWriter(filepath, engine='xlsxwriter') as writer:
-        df.to_excel(writer, sheet_name='Salary Report', index=False)
-        
-        # Tự động điều chỉnh độ rộng cột
-        worksheet = writer.sheets['Salary Report']
-        for idx, col in enumerate(df.columns):
-            series = df[col]
-            max_len = max(
-                series.astype(str).map(len).max(),
-                len(str(series.name))
-            ) + 1
-            worksheet.set_column(idx, idx, max_len)
-        
-        # Thêm định dạng
-        workbook = writer.book
-        header_format = workbook.add_format({
-            'bold': True,
-            'bg_color': '#D3D3D3',
-            'border': 1
-        })
-        
-        # Áp dụng định dạng cho header
-        for col_num, value in enumerate(df.columns.values):
-            worksheet.write(0, col_num, value, header_format)
-    
-    # Gửi file về client
+        if len(salary_data) > 0:
+            df.to_excel(writer, sheet_name='Salary Report', index=False, startrow=1, startcol=0)
+            worksheet = writer.sheets['Salary Report']
+            workbook = writer.book
+
+            # Định dạng cho tiêu đề
+            title_format = workbook.add_format({
+                'bold': True,
+                'font_size': 16,
+                'align': 'center',
+                'valign': 'vcenter',
+                'font_color': '#0066cc'
+            })
+
+            # Định dạng cho header
+            header_format = workbook.add_format({
+                'bold': True,
+                'font_size': 11,
+                'bg_color': '#4F81BD',
+                'font_color': 'white',
+                'align': 'center',
+                'valign': 'vcenter',
+                'border': 1,
+                'border_color': '#2E75B6'
+            })
+
+            # Định dạng cho dữ liệu
+            data_format = workbook.add_format({
+                'font_size': 10,
+                'align': 'center',
+                'valign': 'vcenter',
+                'border': 1,
+                'border_color': '#BDD7EE'
+            })
+
+            # Định dạng cho số tiền
+            money_format = workbook.add_format({
+                'font_size': 10,
+                'align': 'center',
+                'valign': 'vcenter',
+                'border': 1,
+                'border_color': '#BDD7EE',
+                'num_format': '$#,##0'
+            })
+
+            # Định dạng cho số giờ
+            hours_format = workbook.add_format({
+                'font_size': 10,
+                'align': 'center',
+                'valign': 'vcenter',
+                'border': 1,
+                'border_color': '#BDD7EE',
+                'num_format': '#,##0.00'
+            })
+
+            # Định dạng cho dòng tổng
+            total_format = workbook.add_format({
+                'bold': True,
+                'font_size': 11,
+                'bg_color': '#FFE699',
+                'align': 'center',
+                'valign': 'vcenter',
+                'border': 2,
+                'border_color': '#ED7D31'
+            })
+
+            # Định dạng cho dòng tổng với số tiền
+            total_format_money = workbook.add_format({
+                'bold': True,
+                'font_size': 11,
+                'bg_color': '#FFE699',
+                'align': 'center',
+                'valign': 'vcenter',
+                'border': 2,
+                'border_color': '#ED7D31',
+                'num_format': '$#,##0'
+            })
+
+            # Định dạng cho dòng tổng với số giờ
+            total_format_hours = workbook.add_format({
+                'bold': True,
+                'font_size': 11,
+                'bg_color': '#FFE699',
+                'align': 'center',
+                'valign': 'vcenter',
+                'border': 2,
+                'border_color': '#ED7D31',
+                'num_format': '#,##0.00'
+            })
+
+            # Viết tiêu đề báo cáo
+            title = f'SALARY REPORT - {month}/{year}'
+            worksheet.merge_range('A1:E1', title, title_format)
+
+            # Áp dụng định dạng cho header
+            for col_num, value in enumerate(df.columns.values):
+                worksheet.write(1, col_num, value, header_format)
+
+            # Áp dụng định dạng cho dữ liệu
+            for row_num in range(len(df)):
+                for col_num in range(len(df.columns)):
+                    value = df.iloc[row_num, col_num]
+                    if col_num in [2, 4]:  # Hourly Rate và Total Salary
+                        worksheet.write(row_num + 2, col_num, value, money_format)
+                    elif col_num == 3:  # Total Hours
+                        worksheet.write(row_num + 2, col_num, value, hours_format)
+                    else:
+                        worksheet.write(row_num + 2, col_num, value, data_format)
+
+            # Thêm dòng tổng kết
+            total_row = len(df) + 2
+            worksheet.merge_range(f'A{total_row+1}:C{total_row+1}', 'Total', total_format)
+            worksheet.write(total_row, 3, total_hours, total_format_hours)
+            worksheet.write(total_row, 4, total_salary, total_format_money)
+
+            # Tự động điều chỉnh độ rộng cột
+            worksheet.set_column('A:A', 20)  # Employee Name
+            worksheet.set_column('B:B', 15)  # Position
+            worksheet.set_column('C:C', 12)  # Hourly Rate
+            worksheet.set_column('D:D', 12)  # Total Hours
+            worksheet.set_column('E:E', 15)  # Total Salary
+
+            # Thêm đường viền cho toàn bộ bảng
+            worksheet.conditional_format(1, 0, total_row, 4, {
+                'type': 'no_blanks',
+                'format': data_format
+            })
+
+            # Thêm thông tin thống kê
+            stats_row = total_row + 3
+            stats_format = workbook.add_format({
+                'font_size': 11,
+                'align': 'left',
+                'valign': 'vcenter'
+            })
+            worksheet.write(stats_row, 0, f'Report Period: {month}/{year}', stats_format)
+            worksheet.write(stats_row + 1, 0, f'Total Employees: {len(salary_data)}', stats_format)
+            worksheet.write(stats_row + 2, 0, f'Generated on: {datetime.now().strftime("%Y-%m-%d %H:%M")}', stats_format)
+
+        else:
+            worksheet = writer.book.add_worksheet('No Data')
+            no_data_format = workbook.add_format({
+                'bold': True,
+                'font_size': 12,
+                'align': 'center',
+                'valign': 'vcenter',
+                'font_color': 'red'
+            })
+            worksheet.merge_range('A1:E1', 'No salary records found for the selected period', no_data_format)
+
     return send_file(
         filepath,
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         as_attachment=True,
         download_name=filename
     )
+
+
 
 
 # Employee routes
