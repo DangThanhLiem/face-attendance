@@ -1,7 +1,8 @@
+from sqlalchemy import extract
 import pandas as pd
 from datetime import datetime,date
-from app.models import Attendance, User
-
+from app.models import Attendance, Salary, User
+from app import db
 class ReportGenerator:
     def generate_daily_report(self, date):
         """Generate attendance report for a specific date"""
@@ -199,3 +200,40 @@ class ReportGenerator:
         }])
         
         return df, summary
+# app/utils/reports.py
+class SalaryCalculator:
+    def calculate_monthly_salary(self, user_id, month, year):
+        user = User.query.get(user_id)
+        if not user:
+            return None
+            
+        # Lấy tất cả điểm danh trong tháng
+        attendances = Attendance.query.filter(
+            Attendance.user_id == user_id,
+            extract('month', Attendance.date) == month,
+            extract('year', Attendance.date) == year
+        ).all()
+        
+        # Tính tổng giờ làm việc
+        total_hours = 0
+        for att in attendances:
+            if att.check_in and att.check_out:
+                hours = (att.check_out - att.check_in).total_seconds() / 3600
+                total_hours += hours
+                    
+        # Tính lương
+        total_salary = total_hours * user.hourly_rate
+        
+        # Lưu thông tin lương
+        salary = Salary(
+            user_id=user_id,
+            month=month,
+            year=year,
+            total_hours=total_hours,
+            total_salary=total_salary
+        )
+        
+        db.session.add(salary)
+        db.session.commit()
+        
+        return salary

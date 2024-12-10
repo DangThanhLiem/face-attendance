@@ -15,6 +15,8 @@ class User(UserMixin, db.Model):
     name = db.Column(db.String(64))
     is_admin = db.Column(db.Boolean, default=False)
     face_encoding = db.Column(db.LargeBinary)
+    position = db.Column(db.String(100))  
+    hourly_rate = db.Column(db.Float, default=0)  
     attendances = db.relationship('Attendance', backref='user', lazy=True)
 
     def set_password(self, password):
@@ -39,3 +41,14 @@ class Attendance(db.Model):
         # Set status based on time
         if self.time_in.hour >= 9:  # Assuming work starts at 9 AM
             self.status = 'late'
+
+class Salary(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    month = db.Column(db.Integer, nullable=False)
+    year = db.Column(db.Integer, nullable=False)
+    total_hours = db.Column(db.Float, default=0)  # Tổng số giờ làm
+    total_salary = db.Column(db.Float, nullable=False)  # Tổng lương
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    user = db.relationship('User', backref='salaries')

@@ -14,7 +14,9 @@ def init_db():
                 username='admin',
                 email='admin@example.com',
                 name='Administrator',
-                is_admin=True
+                is_admin=True,
+                position='Administrator',
+                hourly_rate=0  
             )
             admin.set_password('admin123')
             db.session.add(admin)

@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Salary Reports</h2>
+
+<div class="card mt-4">
+    <div class="card-body">
+        <form method="GET" class="row">
+            <div class="col-md-4">
+                <label for="month" class="form-label">Month</label>
+                <select name="month" id="month" class="form-control">
+                    {% for i in range(1, 13) %}
+                    <option value="{{ i }}" {% if i == current_month %}selected{% endif %}>
+                        {{ i }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label for="year" class="form-label">Year</label>
+                <input type="number" name="year" id="year" class="form-control" 
+                       value="{{ current_year }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">&nbsp;</label>
+                <div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-filter"></i> Filter
+                    </button>
+                    <a href="{{ url_for('admin.export_salary_report', month=current_month, year=current_year) }}" 
+                       class="btn btn-secondary">
+                        <i class="fas fa-file-excel"></i> Export
+                    </a>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card mt-4">
+    <div class="card-body">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Employee Name</th>
+                    <th>Position</th>
+                    <th>Hourly Rate</th>
+                    <th>Total Hours</th>
+                    <th>Attendance Days</th>
+                    <th>Total Salary</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for data in salary_data %}
+                <tr>
+                    <td>{{ data.employee.name }}</td>
+                    <td>{{ data.employee.position or 'N/A' }}</td>
+                    <td>${{ "%.2f"|format(data.hourly_rate) }}</td>
+                    <td>{{ "%.1f"|format(data.total_hours) }}</td>
+                    <td>{{ data.attendance_days }}</td>
+                    <td>${{ "%.2f"|format(data.total_salary) }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" class="text-center">No salary data available</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<style>
+.table thead tr {
+    background-color: #f8f9fa;
+}
+
+.table thead th {
+    font-weight: 500;
+    border-bottom: 2px solid #dee2e6;
+}
+
+.badge {
+    font-weight: 500;
+    padding: 0.5em 1em;
+}
+
+.btn {
+    margin-right: 0.5rem;
+}
+
+.btn i {
+    margin-right: 0.5rem;
+}
+</style>
+
+{% endblock %}
