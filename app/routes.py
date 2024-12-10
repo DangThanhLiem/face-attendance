@@ -9,7 +9,9 @@ from app.utils.reports import ReportGenerator
 from app import db
 from datetime import datetime
 import os
-
+from calendar import monthrange
+import pandas as pd
+from io import BytesIO
 # Tạo các blueprint
 auth = Blueprint('auth', __name__)
 admin = Blueprint('admin', __name__, url_prefix='/admin')
@@ -175,10 +177,24 @@ def delete_employee(employee_id):
     if not current_user.is_admin:
         return redirect(url_for('employee.dashboard'))
 
-    employee = User.query.get_or_404(employee_id)
-    db.session.delete(employee)
-    db.session.commit()
-    flash('Employee deleted successfully', 'success')
+    try:
+        employee = User.query.get_or_404(employee_id)
+        
+        # Xóa tất cả bản ghi chấm công của nhân viên
+        Attendance.query.filter_by(user_id=employee_id).delete()
+        
+        # Xóa tất cả bản ghi lương của nhân viên
+        Salary.query.filter_by(user_id=employee_id).delete()
+        
+        # Xóa nhân viên
+        db.session.delete(employee)
+        db.session.commit()
+        
+        flash('Employee and all related records deleted successfully', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error deleting employee: {str(e)}', 'danger')
+    
     return redirect(url_for('admin.dashboard'))
 
 @admin.route('/reports')
@@ -263,9 +279,8 @@ def export_report():
     except Exception as e:
         flash(f'Error generating report: {str(e)}', 'danger')
         return redirect(url_for('admin.reports'))
-from sqlalchemy import extract
-from datetime import datetime
-from calendar import monthrange
+
+
 
 @admin.route('/salary-report')
 @login_required
@@ -379,14 +394,21 @@ def export_salary_report():
                 'Generated Date': record.created_at.strftime('%Y-%m-%d %H:%M')
             })
     
-    # Tạo Excel file
-    import pandas as pd
-    from io import BytesIO
-    
+    # Tạo DataFrame
     df = pd.DataFrame(salary_data)
-    output = BytesIO()
     
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+    # Tạo tên file và đường dẫn
+    filename = f'salary_report_{month}_{year}.xlsx'
+    reports_dir = 'D:/face-recognition/reports'
+    
+    # Tạo thư mục nếu chưa tồn tại
+    if not os.path.exists(reports_dir):
+        os.makedirs(reports_dir)
+    
+    filepath = os.path.join(reports_dir, filename)
+    
+    # Tạo Excel file với định dạng
+    with pd.ExcelWriter(filepath, engine='xlsxwriter') as writer:
         df.to_excel(writer, sheet_name='Salary Report', index=False)
         
         # Tự động điều chỉnh độ rộng cột
@@ -398,14 +420,25 @@ def export_salary_report():
                 len(str(series.name))
             ) + 1
             worksheet.set_column(idx, idx, max_len)
+        
+        # Thêm định dạng
+        workbook = writer.book
+        header_format = workbook.add_format({
+            'bold': True,
+            'bg_color': '#D3D3D3',
+            'border': 1
+        })
+        
+        # Áp dụng định dạng cho header
+        for col_num, value in enumerate(df.columns.values):
+            worksheet.write(0, col_num, value, header_format)
     
-    output.seek(0)
-    
+    # Gửi file về client
     return send_file(
-        output,
+        filepath,
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         as_attachment=True,
-        download_name=f'salary_report_{month}_{year}.xlsx'
+        download_name=filename
     )
 
 
