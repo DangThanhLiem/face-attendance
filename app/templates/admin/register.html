@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">Register New Employee</h4>
+            </div>
+            <div class="card-body">
+                <form id="registerForm" method="POST" enctype="multipart/form-data">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="username" class="form-label">Username</label>
+                                <input type="text" class="form-control" id="username" name="username" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="email" class="form-label">Email</label>
+                                <input type="email" class="form-control" id="email" name="email" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="name" class="form-label">Full Name</label>
+                                <input type="text" class="form-control" id="name" name="name" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="password" class="form-label">Password</label>
+                                <input type="password" class="form-control" id="password" name="password" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="camera-container mb-3">
+                                <video id="camera-feed" class="camera-feed" autoplay playsinline></video>
+                                <canvas id="capture-canvas" style="display: none;"></canvas>
+                            </div>
+                            <div class="text-center mb-3">
+                                <button type="button" class="btn btn-primary" id="captureBtn">
+                                    <i class="fas fa-camera"></i> Capture Photo
+                                </button>
+                                <button type="button" class="btn btn-secondary" id="retakeBtn" style="display: none;">
+                                    <i class="fas fa-redo"></i> Retake
+                                </button>
+                            </div>
+                            <div id="preview-container" class="text-center mb-3" style="display: none;">
+                                <img id="preview-image" class="img-fluid rounded" style="max-height: 300px;">
+                            </div>
+                            <input type="hidden" id="face_image" name="face_image">
+                        </div>
+                    </div>
+                    <div class="text-center">
+                        <button type="submit" class="btn btn-success" id="submitBtn" disabled>
+                            <i class="fas fa-user-plus"></i> Register Employee
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let stream = null;
+const video = document.getElementById('camera-feed');
+const canvas = document.getElementById('capture-canvas');
+const captureBtn = document.getElementById('captureBtn');
+const retakeBtn = document.getElementById('retakeBtn');
+const previewContainer = document.getElementById('preview-container');
+const previewImage = document.getElementById('preview-image');
+const submitBtn = document.getElementById('submitBtn');
+const faceImageInput = document.getElementById('face_image');
+
+// Khởi tạo camera
+async function initCamera() {
+    try {
+        stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                width: 640,
+                height: 480,
+                facingMode: 'user'
+            }
+        });
+        video.srcObject = stream;
+        video.style.display = 'block';
+        previewContainer.style.display = 'none';
+        retakeBtn.style.display = 'none';
+        captureBtn.style.display = 'block';
+        submitBtn.disabled = true;
+    } catch (err) {
+        console.error('Error accessing camera:', err);
+        alert('Could not access camera. Please ensure camera permissions are granted.');
+    }
+}
+
+// Chụp ảnh
+function capturePhoto() {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    
+    // Chuyển canvas thành base64 image
+    const imageData = canvas.toDataURL('image/jpeg');
+    
+    // Hiển thị ảnh preview
+    previewImage.src = imageData;
+    video.style.display = 'none';
+    previewContainer.style.display = 'block';
+    captureBtn.style.display = 'none';
+    retakeBtn.style.display = 'block';
+    
+    // Lưu dữ liệu ảnh vào form
+    faceImageInput.value = imageData;
+    submitBtn.disabled = false;
+    
+    // Dừng camera
+    if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+    }
+}
+
+// Chụp lại ảnh
+function retakePhoto() {
+    initCamera();
+}
+
+// Event listeners
+document.addEventListener('DOMContentLoaded', initCamera);
+captureBtn.addEventListener('click', capturePhoto);
+retakeBtn.addEventListener('click', retakePhoto);
+
+// Form submission
+document.getElementById('registerForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    if (!faceImageInput.value) {
+        alert('Please capture a photo first');
+        return;
+    }
+    
+    // Convert base64 to blob
+    const base64Data = faceImageInput.value.split(',')[1];
+    const blob = await fetch(`data:image/jpeg;base64,${base64Data}`).then(res => res.blob());
+    
+    // Create FormData
+    const formData = new FormData(this);
+    formData.delete('face_image'); // Remove base64 data
+    formData.append('face_image', blob, 'capture.jpg'); // Add blob instead
+    
+    // Submit form
+    try {
+        const response = await fetch(window.location.href, {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (response.redirected) {
+            window.location.href = response.url;
+        } else {
+            const result = await response.text();
+            document.open();
+            document.write(result);
+            document.close();
+        }
+    } catch (error) {
+        console.error('Error submitting form:', error);
+        alert('Error registering employee. Please try again.');
+    }
+});
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', () => {
+    if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+    }
+});
+</script>
+{% endblock %}

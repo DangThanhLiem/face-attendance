@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Attendance Reports</h2>
+
+<div class="card mt-4">
+    <div class="card-body">
+        <form method="GET" class="row">
+            <div class="col-md-4">
+                <label for="date" class="form-label">Date</label>
+                <input type="date" class="form-control" id="date" name="date" 
+                       value="{{ selected_date }}">
+            </div>
+            <div class="col-md-4">
+                <label for="employee_id" class="form-label">Employee</label>
+                <select class="form-control" id="employee_id" name="employee_id">
+                    <option value="">All Employees</option>
+                    {% for employee in employees %}
+                    <option value="{{ employee.id }}" 
+                            {% if selected_employee|int == employee.id %}selected{% endif %}>
+                        {{ employee.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">&nbsp;</label>
+                <div>
+                    <button type="submit" class="btn btn-primary">Filter</button>
+                    <button type="button" class="btn btn-secondary" onclick="exportReport()">Export</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card mt-4">
+    <div class="card-body">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Employee</th>
+                    <th>Date</th>
+                    <th>Time In</th>
+                    <th>Time Out</th>
+                    <th>Duration</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for attendance in attendances %}
+                <tr>
+                    <td>{{ attendance.user.name }}</td>
+                    <td>{{ attendance.date.strftime('%Y-%m-%d') }}</td>
+                    <td>{{ attendance.time_in.strftime('%H:%M:%S') }}</td>
+                    <td>{{ attendance.time_out.strftime('%H:%M:%S') if attendance.time_out }}</td>
+                    <td>
+                        {% if attendance.time_in and attendance.time_out %}
+                            {% set duration = attendance.time_out - attendance.time_in %}
+                            {{ duration.total_seconds() // 3600 }}h 
+                            {{ (duration.total_seconds() % 3600) // 60 }}m
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="badge bg-{{ 'success' if attendance.status == 'present' else 'warning' }}">
+                            {{ attendance.status }}
+                        </span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% block extra_js %}
+<script>
+function exportReport() {
+    const date = document.getElementById('date').value;
+    const employee_id = document.getElementById('employee_id').value;
+    window.location.href = `{{ url_for('admin.export_report') }}?date=${date}&employee_id=${employee_id}`;
+}
+</script>
+{% endblock %}
+{% endblock %}

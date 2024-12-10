@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>My Attendance History</h2>
+
+<div class="card mt-4">
+    <div class="card-header">
+        <h5 class="mb-0">Attendance Records</h5>
+    </div>
+    <div class="card-body">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Time In</th>
+                    <th>Time Out</th>
+                    <th>Duration</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for attendance in attendances %}
+                <tr>
+                    <td>{{ attendance.date.strftime('%Y-%m-%d') }}</td>
+                    <td>{{ attendance.time_in.strftime('%H:%M:%S') }}</td>
+                    <td>{{ attendance.time_out.strftime('%H:%M:%S') if attendance.time_out }}</td>
+                    <td>
+                        {% if attendance.time_in and attendance.time_out %}
+                            {% set duration = attendance.time_out - attendance.time_in %}
+                            {{ duration.total_seconds() // 3600 }}h 
+                            {{ (duration.total_seconds() % 3600) // 60 }}m
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="badge bg-{{ 'success' if attendance.status == 'present' else 'warning' }}">
+                            {{ attendance.status }}
+                        </span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Welcome, {{ current_user.name }}</h2>
+
+<div class="row mt-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Mark Attendance</h5>
+            </div>
+            <div class="card-body">
+                <div class="camera-container">
+                    <video id="camera-feed" class="camera-feed" autoplay></video>
+                    <div id="attendance-status" class="attendance-status"></div>
+                </div>
+                <button type="button" class="btn btn-primary mt-3" onclick="markAttendance()">
+                    Mark Attendance
+                </button>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Today's Status</h5>
+            </div>
+            <div class="card-body">
+                {% if attendance %}
+                    <p><strong>Time In:</strong> {{ attendance.time_in.strftime('%H:%M:%S') }}</p>
+                    {% if attendance.time_out %}
+                        <p><strong>Time Out:</strong> {{ attendance.time_out.strftime('%H:%M:%S') }}</p>
+                        <p><strong>Duration:</strong> 
+                            {% set duration = attendance.time_out - attendance.time_in %}
+                            {{ duration.total_seconds() // 3600 }}h 
+                            {{ (duration.total_seconds() % 3600) // 60 }}m
+                        </p>
+                    {% endif %}
+                    <p><strong>Status:</strong> 
+                        <span class="badge bg-{{ 'success' if attendance.status == 'present' else 'warning' }}">
+                            {{ attendance.status }}
+                        </span>
+                    </p>
+                {% else %}
+                    <p>No attendance marked today</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
